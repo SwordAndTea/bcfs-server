@@ -9,7 +9,7 @@ elif [ "$1" == "uninstall" ]
 then
     rm -r /usr/local/bcfs_server
     rm /usr/local/bin/bcfs-server
-    mv .UserInfos Bcfs-Server-Record
+    mv $HOME/.UserInfos $HOME/Bcfs-Server-Record
 else
     echo "wrong parameter, use $0 <start | shutdown | uninstall>"
 fi
