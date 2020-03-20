@@ -10,6 +10,5 @@ then
     rm -r /usr/local/bcfs_server
     rm /usr/local/bin/bcfs-server
 else
-then
     echo "wrong parameter, use $0 <start | shutdown | uninstall>"
 fi
