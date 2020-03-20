@@ -3,23 +3,23 @@ const fs = require('fs');
 const Tx = require('ethereumjs-tx').Transaction;
 const async = require('async');
 
-let base_dir = process.env.HOME;
+let base_dir = process.env.HOME + "/.UserInfos";
 
-let _transactionFile = base_dir + "/.UserInfos/.transaction";
+let _transactionFile = base_dir + "/.transaction";
 
-let _transactionResultFile = base_dir + "/.UserInfos/.transaction_result";
+let _transactionResultFile = base_dir + "/.transaction_result";
 
-let _balanceFile = base_dir + "/.UserInfos/.balance";
+let _balanceFile = base_dir + "/.balance";
 
-let _balanceResultFile = base_dir + "/.UserInfos/.balance_result";
+let _balanceResultFile = base_dir + "/.balance_result";
 
-let _accountFile = base_dir + "/.UserInfos/.account";//file to record account name
+let _accountFile = base_dir + "/.account";//file to record account name
 
-let _accountResultFile = base_dir + "/.UserInfos/.account_result";
+let _accountResultFile = base_dir + "/.account_result";
 
-let _receive_file = base_dir + "/.UserInfos/.receive"
+let _receive_file = base_dir + "/.receive"
 
-let _privateKeysFile = base_dir + "/.UserInfos/.private_keys";//file to record address and private_key
+let _privateKeysFile = base_dir + "/.private_keys";//file to record address and private_key
 
 var _privateKeys = {"" : ""};
 
