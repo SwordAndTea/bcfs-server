@@ -1,22 +1,25 @@
-//const { exec } = require('child_process');
 const Web3 = require('web3');
 const fs = require('fs');
 const Tx = require('ethereumjs-tx').Transaction;
 const async = require('async');
 
-var _monitorFile = "";
+let base_dir = process.env.HOME;
 
-if (process.argv.length == 3) {
-	_monitorFile = process.argv[2];
-} else {
-	console.log("error parameters");
-	process.exit(1);
-}
+let _transactionFile = base_dir + "/.UserInfos/.transaction";
 
+let _transactionResultFile = base_dir + "/.UserInfos/.transaction_result";
 
-const _from = "0x9e7D97F07097E9B3E21459776EEab507213DF52F";
+let _balanceFile = base_dir + "/.UserInfos/.balance";
 
-const _contractAddress = "0x3C1670cb9c9D27CeDf2119110165663efc77a22f";
+let _balanceResultFile = base_dir + "/.UserInfos/.balance_result";
+
+let _accountFile = base_dir + "/.UserInfos/.account";//file to record account name
+
+let _accountResultFile = base_dir + "/.UserInfos/.account_result";
+
+let _receive_file = base_dir + "/.UserInfos/.receive"
+
+let _privateKeysFile = base_dir + "/.UserInfos/.private_keys";//file to record address and private_key
 
 var _privateKeys = {"" : ""};
 
@@ -33,23 +36,24 @@ if (typeof web3 !== "undefined") {
 
 //填充地址为64位
 function fill64(hexAddress) {
+	filledAddress = "";
 	if (hexAddress.length < 64) {
 		filledAddress = new Array(64 - hexAddress.length + 1).join("0") + hexAddress;
 	}
 	return filledAddress;
 }
 
-function getBlance(address) {
+function getBlance(address, contractAddress, callback) {
 	var operate = "0x70a08231" + fill64(address.slice(2));
 	web3.eth.call({
 		to: contractAddress,
 		data: operate
 	}).then(function(result){
-		console.log(parseInt(result) / Math.pow(10, _decimal)); 
+		callback(parseInt(result) / Math.pow(10, _decimal));
 	});
 }
 
-function sendTransaction(from, to, contractAddress, number) {
+function sendTransaction(from, to, contractAddress, number, successCallBack, failCallBack) {
 	//nonce随机数，这里取该账号的交易数量
 	var hex_number = (number * Math.pow(10, _decimal)).toString(16);
 	var operate = "0xa9059cbb" + fill64(to.slice(2)) + fill64(hex_number);
@@ -71,15 +75,42 @@ function sendTransaction(from, to, contractAddress, number) {
 	});
 }
 
-
-var pre_size;
+function startMonitorFile(filePath, callback) {
+	fs.access(filePath, function(err) {
+		if (err) {
+			console.log("monitor file doesn't exist");
+			return;
+		}
+		fs.stat(filePath, function(error, initState) {
+			var pre_size = initState.size;
+			fs.watch(filePath, function (event, filename) {
+				if (event === "change") {
+					fs.stat(filePath, function(error, state) {
+						if (pre_size < state.size) {
+							fs.open(filePath, "r", function(error, fd) {
+								buffer = Buffer.alloc(state.size - pre_size, 0);
+								fs.read(fd, buffer, 0, state.size - pre_size, pre_size, function(error, byteRead, buffer) {
+									var data = buffer.toString();
+									pre_size = state.size;
+									console.log(data);
+									callback(data);
+								});
+							});
+						} else {
+							pre_size = state.size;
+						}
+					});
+				}
+			});
+		});
+	});
+}
 
 async.series(
     [
         function (callback) {
-			const privateKeyPath = ".private_keys";
-            fs.open(privateKeyPath, "r", function(error, fd) {
-				fs.stat(privateKeyPath, function(error, state){
+            fs.open(_privateKeysFile, "r", function(error, fd) {
+				fs.stat(_privateKeysFile, function(error, state){
 					buffer = Buffer.alloc(state.size, 0);
 					fs.read(fd, buffer, 0, state.size, 0, function(error, byteRead, buffer){
 						var data = buffer.toString();
@@ -95,36 +126,44 @@ async.series(
 			});
         },
         function (callback) {
-            fs.access(_monitorFile, function(err) {
-				if (err) {
-					console.log("monitor file doesn't exist");
-					process.exit(1);
-				}
-				fs.stat(_monitorFile, function(error, initState) {
-					pre_size = initState.size;
-					fs.watch(_monitorFile, function (event, filename) {
-						fs.stat(_monitorFile, function(error, state) {
-							if (pre_size < state.size) {
-								fs.open(_monitorFile, "r", function(error, fd) {
-									buffer = Buffer.alloc(state.size - pre_size, 0);
-									fs.read(fd, buffer, 0, state.size - pre_size, pre_size, function(error, byteRead, buffer) {
-										var data = buffer.toString();
-										var dataArray = data.split(":");
-										sendTransaction(dataArray[0], dataArray[1], dataArray[2], dataArray[3]);
-									});
-								});
-							}
-							pre_size = state.size;
+            startMonitorFile(_balanceFile, function(newData) {
+				newData = newData.substr(0, newData.length-1);
+				var dataArray = newData.split(":");
+				getBlance(dataArray[0], dataArray[1], function(balance){
+					console.log("balance is " + balance);
+					fs.open(_balanceResultFile, "w", function(error, fd) {
+						fs.write(fd, balance, function(err) {
+							fs.close(fd);
 						});
-					});
+						
+					})
 				});
-				callback(null, "B");
 			});
+			startMonitorFile(_transactionFile, function(newData) {
+				var dataArray = newData.split(":");
+				sendTransaction(dataArray[0], dataArray[1], dataArray[2], parseDouble(dataArray[3]), 
+				function(){
+					fs.open(_transactionResultFile, "w", function(error, fd) {
+						fs.write(fd, "success", function(err) {
+							fs.close(fd);
+						});
+					})
+				}, 
+				function(error){
+					fs.open(_transactionResultFile, "w", function(error, fd) {
+						fs.write(fd, "error", function(err) {
+							fs.close(fd);
+						});
+					})
+				});
+			});
+			startMonitorFile(_accountFile, function(newData) {
+
+			});
+			callback(null, "B");
         }
     ], function (err, results) {
         
     }
 );
-
-
-
+//getBlance("0x9e7D97F07097E9B3E21459776EEab507213DF52F", "0x3C1670cb9c9D27CeDf2119110165663efc77a22f", console.log);
