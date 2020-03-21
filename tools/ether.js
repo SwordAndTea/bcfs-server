@@ -2,6 +2,7 @@ const Web3 = require('web3');
 const fs = require('fs');
 const Tx = require('ethereumjs-tx').Transaction;
 const async = require('async');
+//const Account = require('web3-eth-accounts');
 
 let base_dir = process.env.HOME + "/.UserInfos";
 
@@ -43,16 +44,32 @@ function fill64(hexAddress) {
 	return filledAddress;
 }
 
-function getBlance(address, contractAddress, callback) {
+/**
+ * get balance
+ * @param {string} address the account address to look up for
+ * @param {string} contractAddress the coin type
+ * @param {function(balance: double)} successCallBack if success, do something with the balance
+ * @param {function(error: string)}  failCallBack if fail, do something with the error message
+ */
+function getBalance(address, contractAddress, successCallBack, failCallBack) {
 	var operate = "0x70a08231" + fill64(address.slice(2));
 	web3.eth.call({
 		to: contractAddress,
 		data: operate
 	}).then(function(result){
-		callback(parseInt(result) / Math.pow(10, _decimal));
+		successCallBack(parseInt(result) / Math.pow(10, _decimal));
 	});
 }
 
+/**
+ * send a transaction
+ * @param {string} from the address triggered the transaction action
+ * @param {string} to the address to receive the transaction
+ * @param {string} contractAddress the coin type you send
+ * @param {double} number the count you send
+ * @param {function(transactionHash: string)} successCallBack if success, do something with the transaction hash
+ * @param {function(error: string)} failCallBack if fail, do something with the error message
+ */
 function sendTransaction(from, to, contractAddress, number, successCallBack, failCallBack) {
 	//nonce随机数，这里取该账号的交易数量
 	var hex_number = (number * Math.pow(10, _decimal)).toString(16);
@@ -68,41 +85,104 @@ function sendTransaction(from, to, contractAddress, number, successCallBack, fai
 
 		//使用私钥对原始的交易信息进行签名，得到签名后的交易数据
 		var tx = new Tx(rawTx,{"chain":"ropsten"});
-		tx.sign(Buffer.from(_privateKeys[from], "hex"));
+		tx.sign(Buffer.from(_privateKeys[from].slice(2), "hex"));
 		var serializedTx = tx.serialize();
 		web3.eth.sendSignedTransaction("0x" + serializedTx.toString("hex"))
-		.on("receipt", console.log);
+		.on("receipt", function(receipt){
+			console.log(receipt);
+			successCallBack(receipt.transactionHash);
+		}).on("error", function(err) {
+			failCallBack("error");
+		});
 	});
 }
 
-function startMonitorFile(filePath, callback) {
+/**
+ * create a new account
+ * @param {string} name the alias of your new account
+ * @param {function(address: string, privateKey: string)} successCallBack if sussess, do something with the address and private key
+ * @param {function(error: string)} failCallBack if fail, do something with the error message
+ */
+
+function create_account(name, successCallBack, failCallBack) {
+	var account = web3.eth.accounts.create();
+	if (typeof account !== "undefined") {
+		successCallBack(account.address, account.privateKey);
+	} else {
+		failCallBack("error");
+	}
+}
+
+/**
+ * add an exist account by private_key
+ * @param {boolean} private_key the private key you give
+ * @param {function(address: string)} successCallBack if success, do something with the address
+ * @param {function(error: string)} failCallBack if fail, do something with the error message
+ */
+
+function add_account(private_key, successCallBack, failCallBack) {
+	var data = web3.eth.accounts.privateKeyToAccount(private_key);
+	if (typeof data !== "undefined") {
+		successCallBack(data.address);
+	} else {
+		failCallBack("error");
+	}
+}
+
+
+/** 
+ * monitor a file
+ * @param {string} filePath  the file to monitor
+ * @param {boolean} increament : bool should monitor the increament in the file or the total file
+ * @param {function(data: string)} callback : the function to deal with the data in the file
+ */
+function startMonitorFile(filePath, increament, callback) {
 	fs.access(filePath, function(err) {
 		if (err) {
 			console.log("monitor file doesn't exist");
 			return;
 		}
-		fs.stat(filePath, function(error, initState) {
-			var pre_size = initState.size;
+		if (increament == true) {
+			fs.stat(filePath, function(error, initState) {
+				var pre_size = initState.size;
+				fs.watch(filePath, function (event, filename) {
+					if (event === "change") {
+						fs.stat(filePath, function(error, state) {
+							if (pre_size < state.size) {
+								fs.open(filePath, "r", function(error, fd) {
+									buffer = Buffer.alloc(state.size - pre_size, 0);
+									fs.read(fd, buffer, 0, state.size - pre_size, pre_size, function(error, byteRead, buffer) {
+										var data = buffer.toString();
+										pre_size = state.size;
+										console.log("new received data is : " + data);
+										callback(data);
+									});
+								});
+							} else {
+								pre_size = state.size;
+							}
+						});
+					}
+				});
+			});
+		} else {
 			fs.watch(filePath, function (event, filename) {
 				if (event === "change") {
 					fs.stat(filePath, function(error, state) {
-						if (pre_size < state.size) {
-							fs.open(filePath, "r", function(error, fd) {
-								buffer = Buffer.alloc(state.size - pre_size, 0);
-								fs.read(fd, buffer, 0, state.size - pre_size, pre_size, function(error, byteRead, buffer) {
-									var data = buffer.toString();
-									pre_size = state.size;
-									console.log(data);
-									callback(data);
-								});
+						fs.open(filePath, "r", function(error, fd) {
+							buffer = Buffer.alloc(state.size, 0);
+							fs.read(fd, buffer, 0, state.size, 0, function(error, byteRead, buffer) {
+								var data = buffer.toString();
+								pre_size = state.size;
+								console.log("new received data is : " + data);
+								callback(data);
 							});
-						} else {
-							pre_size = state.size;
-						}
+						});
 					});
 				}
 			});
-		});
+		}
+		
 	});
 }
 
@@ -126,10 +206,10 @@ async.series(
 			});
         },
         function (callback) {
-            startMonitorFile(_balanceFile, function(newData) {
+            startMonitorFile(_balanceFile, true, function(newData) {
 				newData = newData.substr(0, newData.length-1);
 				var dataArray = newData.split(":");
-				getBlance(dataArray[0], dataArray[1], function(balance){
+				getBalance(dataArray[0], dataArray[1], function(balance){
 					console.log("balance is " + balance);
 					fs.open(_balanceResultFile, "w", function(error, fd) {
 						fs.write(fd, balance, function(err) {
@@ -139,12 +219,12 @@ async.series(
 					})
 				});
 			});
-			startMonitorFile(_transactionFile, function(newData) {
+			startMonitorFile(_transactionFile, true, function(newData) {
 				var dataArray = newData.split(":");
-				sendTransaction(dataArray[0], dataArray[1], dataArray[2], parseDouble(dataArray[3]), 
-				function(){
+				sendTransaction(dataArray[0], dataArray[1], dataArray[2], +dataArray[3], 
+				function(transactionHash){
 					fs.open(_transactionResultFile, "w", function(error, fd) {
-						fs.write(fd, "success", function(err) {
+						fs.write(fd, transactionHash, function(err) {
 							fs.close(fd);
 						});
 					})
@@ -157,8 +237,49 @@ async.series(
 					})
 				});
 			});
-			startMonitorFile(_accountFile, function(newData) {
-
+			startMonitorFile(_accountFile, true, function(newData) {
+				var dataArray = newData.substr(0, newData.length - 1).split(":");
+				if (dataArray[0] === "create") {
+					create_account(dataArray[1], function(address, private_key) {
+						fs.open(_accountResultFile, "w", function(error, fd) {
+							fs.write(fd, address+":"+private_key, function(err) {
+								fs.close(fd);
+							});
+						})
+						fs.open(_privateKeysFile, "a", function(error, fd) {
+							fs.write(fd, address+":"+private_key + "\n", function(err) {
+								fs.close(fd);
+							});
+						})
+						_privateKeys[address] = private_key;
+					}, function (err) {
+						fs.open(_accountResultFile, "w", function(error, fd) {
+							fs.write(fd, "error", function(err) {
+								fs.close(fd);
+							});
+						})
+					})
+				} else if (dataArray[0] === "add") {
+					add_account(dataArray[1], function(address) {
+						fs.open(_accountResultFile, "w", function(error, fd) {
+							fs.write(fd, address, function(err) {
+								fs.close(fd);
+							});
+						})
+						fs.open(_privateKeysFile, "a", function(error, fd) {
+							fs.write(fd, address+":"+dataArray[1] + "\n", function(err) {
+								fs.close(fd);
+							});
+						})
+						_privateKeys[address] = dataArray[1];
+					}, function(err) {
+						fs.open(_accountResultFile, "w", function(error, fd) {
+							fs.write(fd, "error", function(err) {
+								fs.close(fd);
+							});
+						})
+					})
+				}
 			});
 			callback(null, "B");
         }
@@ -166,4 +287,3 @@ async.series(
         
     }
 );
-//getBlance("0x9e7D97F07097E9B3E21459776EEab507213DF52F", "0x3C1670cb9c9D27CeDf2119110165663efc77a22f", console.log);
