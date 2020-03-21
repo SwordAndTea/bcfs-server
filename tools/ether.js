@@ -71,6 +71,9 @@ function getBalance(address, contractAddress, successCallBack, failCallBack) {
  * @param {function(error: string)} failCallBack if fail, do something with the error message
  */
 function sendTransaction(from, to, contractAddress, number, successCallBack, failCallBack) {
+	if (typeof _privateKeys[from] === "undefined") {
+		failCallBack("no such address in local, add account first");
+	}
 	//nonce随机数，这里取该账号的交易数量
 	var hex_number = (number * Math.pow(10, _decimal)).toString(16);
 	var operate = "0xa9059cbb" + fill64(to.slice(2)) + fill64(hex_number);
@@ -220,7 +223,7 @@ async.series(
 				});
 			});
 			startMonitorFile(_transactionFile, true, function(newData) {
-				var dataArray = newData.split(":");
+				var dataArray = newData.substr(0, newData.length - 1).split(":");
 				sendTransaction(dataArray[0], dataArray[1], dataArray[2], +dataArray[3], 
 				function(transactionHash){
 					fs.open(_transactionResultFile, "w", function(error, fd) {
