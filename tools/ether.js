@@ -34,6 +34,38 @@ var _coins = ["0x3C1670cb9c9D27CeDf2119110165663efc77a22f"];
 
 const _decimal = 18;
 
+function refreshProvider(web3Obj, providerUrl) {
+	let retries = 0
+  
+	function retry(event) {
+	  if (event) {
+		console.log('Web3 provider disconnected or errored.');
+		retries += 1
+  
+		if (retries > 5) {
+		  console.log(`Max retries of 5 exceeding: ${retries} times tried`);
+		  return setTimeout(refreshProvider, 5000);
+		}
+	  } else {
+		console.log(`Reconnecting web3 provider websocket provider`);
+		refreshProvider(web3Obj, providerUrl);
+	  }
+  
+	  return null
+	}
+  
+	const provider = new Web3.providers.WebsocketProvider(providerUrl)
+	
+	provider.on('end', () => retry())
+	provider.on('error', () => retry())
+  
+	web3Obj.setProvider(provider)
+  
+	console.log('New Web3 provider initiated');
+  
+	return provider
+}
+
 
 if (typeof web3 !== "undefined") {
 	web3 = new Web3(web3.currentProvider);
@@ -41,7 +73,8 @@ if (typeof web3 !== "undefined") {
 	//https://ropsten.infura.io/v3/912555e49dd7489b9689e8e0e4b79f55
 	//wss://ropsten.infura.io/ws/v3/912555e49dd7489b9689e8e0e4b79f55
 	//WebsocketProvider
-	web3 = new Web3(new Web3.providers.WebsocketProvider("wss://ropsten.infura.io/ws/v3/912555e49dd7489b9689e8e0e4b79f55"));
+	web3 = new Web3();
+	web3 = new Web3(refreshProvider(web3, "wss://ropsten.infura.io/ws/v3/912555e49dd7489b9689e8e0e4b79f55"));
 }
 
 
@@ -448,6 +481,7 @@ async.series(
 							});
 						})
 					}, function(error) {//fail
+						console.log(error);
 						fs.open(_balanceResultFile, "w", function(err, fd) {
 							fs.write(fd, "error" + error, function(err) {
 								fs.close(fd);
@@ -465,6 +499,7 @@ async.series(
 								});
 							})
 						}, function(error){
+							console.log(error);
 							fs.open(_balanceResultFile, "w", function(err, fd) {
 								fs.write(fd, "error" + error, function(err) {
 									fs.close(fd);
