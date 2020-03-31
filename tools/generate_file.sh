@@ -4,7 +4,7 @@
 #     return
 # fi
 
-for line in `cat ./config.txt`
+for line in `cat /usr/local/bcfs_server/config.txt`
 do
     #echo $HOME$line
     if [ "$line" == "/.UserInfos" ]; then
