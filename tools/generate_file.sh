@@ -12,6 +12,6 @@ do
         chmod 755 $HOME$line
     else
         touch $HOME$line
-        chmod 644 $HOME$line
+        chmod 664 $HOME$line
     fi
 done
