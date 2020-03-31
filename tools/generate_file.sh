@@ -1,19 +1,17 @@
 #!/bin/bash
-mkdir $HOME/.UserInfos
-chmod 755 $HOME/.UserInfos
-touch $HOME/.UserInfos/.transaction
-touch $HOME/.UserInfos/.transaction_result
-touch $HOME/.UserInfos/.balance
-touch $HOME/.UserInfos/.balance_result
-touch $HOME/.UserInfos/.account
-touch $HOME/.UserInfos/.account_result
-touch $HOME/.UserInfos/.receive
-touch $HOME/.UserInfos/.private_keys
-chmod 664 $HOME/.UserInfos/.transaction
-chmod 664 $HOME/.UserInfos/.transaction_result
-chmod 664 $HOME/.UserInfos/.balance
-chmod 664 $HOME/.UserInfos/.balance_result
-chmod 664 $HOME/.UserInfos/.account
-chmod 664 $HOME/.UserInfos/.account_result
-chmod 664 $HOME/.UserInfos/.receive
-chmod 664 $HOME/.UserInfos/.private_keys
+# if [ $# != 1 ]; then
+#     echo "parameter error, give root dir"
+#     return
+# fi
+
+for line in `cat ./config.txt`
+do
+    #echo $HOME$line
+    if [ "$line" == "/.UserInfos" ]; then
+        mkdir $HOME$line
+        chmod 755 $HOME$line
+    else
+        touch $HOME$line
+        chmod 644 $HOME$line
+    fi
+done

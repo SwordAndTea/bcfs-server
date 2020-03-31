@@ -1,0 +1,12 @@
+/.UserInfos
+/.UserInfos/.transaction
+/.UserInfos/.transaction_result
+/.UserInfos/.balance
+/.UserInfos/.balance_result
+/.UserInfos/.account
+/.UserInfos/.account_result
+/.UserInfos/.receive
+/.UserInfos/.add_coin
+/.UserInfos/.add_coin_result
+/.UserInfos/.coins
+/.UserInfos/.private_keys

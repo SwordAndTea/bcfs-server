@@ -2,7 +2,7 @@ const Web3 = require('web3');
 const fs = require('fs');
 const Tx = require('ethereumjs-tx').Transaction;
 const async = require('async');
-//const Account = require('web3-eth-accounts');
+const sd = require('silly-datetime');
 
 let base_dir = process.env.HOME + "/.UserInfos";
 
@@ -18,11 +18,19 @@ let _accountFile = base_dir + "/.account";//file to record account name
 
 let _accountResultFile = base_dir + "/.account_result";
 
-let _receive_file = base_dir + "/.receive"
+let _receiveFile = base_dir + "/.receive";
+
+let _addCoinFile = base_dir + "/.add_coins";
+
+let _addCoinResultFile = base_dir + "/.add_coin_result"
+
+let _coinsFile = base_dir + "/.coins";
 
 let _privateKeysFile = base_dir + "/.private_keys";//file to record address and private_key
 
-var _privateKeys = {"" : ""};
+var _privateKeys = new Array();//address : [name, private key]
+
+var _coins = ["0x3C1670cb9c9D27CeDf2119110165663efc77a22f"];
 
 const _decimal = 18;
 
@@ -30,7 +38,10 @@ const _decimal = 18;
 if (typeof web3 !== "undefined") {
 	web3 = new Web3(web3.currentProvider);
 } else {
-	web3 = new Web3(new Web3.providers.HttpProvider("https://ropsten.infura.io/v3/912555e49dd7489b9689e8e0e4b79f55"));
+	//https://ropsten.infura.io/v3/912555e49dd7489b9689e8e0e4b79f55
+	//wss://ropsten.infura.io/ws/v3/912555e49dd7489b9689e8e0e4b79f55
+	//WebsocketProvider
+	web3 = new Web3(new Web3.providers.WebsocketProvider("wss://ropsten.infura.io/ws/v3/912555e49dd7489b9689e8e0e4b79f55"));
 }
 
 
@@ -56,8 +67,122 @@ function getBalance(address, contractAddress, successCallBack, failCallBack) {
 	web3.eth.call({
 		to: contractAddress,
 		data: operate
-	}).then(function(result){
-		successCallBack(parseInt(result) / Math.pow(10, _decimal));
+	},function(error, result) {
+		if (error) {
+			failCallBack(error);
+		} else {
+			successCallBack(parseInt(result) / Math.pow(10, _decimal));
+		}
+	});
+}
+
+
+/**
+ * get all balance for current exist account
+ * @param {function(data: string)} successCallBack 
+ * @param {function(error: string)} failCallBack 
+ */
+function getAllBalance(successCallBack, failCallBack) {
+	var length = 0;
+	for (var key in _privateKeys) {
+		length += 1;
+		break;
+	}
+	if (length == 0) {
+		failCallBack("error no account current, add account first")
+		return;
+	}
+	var data = "";
+	var count = 0;
+	var errorCount = 0;
+	async.series([
+		function(callback) {
+			for (var key in _privateKeys) {
+				let currentKey = key;
+				count += 2;
+				web3.eth.getBalance(key, function(error, result) {
+					if (error) {
+						console.log(error);
+						errorCount += 1;
+					} else {
+						data += currentKey + ":" + "ETH:" + result / Math.pow(10, _decimal) + "\n";
+						count -= 1;
+						console.log(count);
+						if (count === 0) {
+							callback(null, "A");
+						}
+					}
+					
+				});
+				getBalance(key, _coins[0], function(balance) {
+					data += currentKey + ":" + "WC:" + balance + "\n";
+					count -= 1;
+					console.log(count);
+					if (count === 0) {
+						callback(null, "A");
+					}
+				}, function(error) {
+					errorCount += 1;
+					console.log(error);
+				})
+			}
+		},
+		function(callback) {
+			if (errorCount != 0) {
+				failCallBack("error happend in get balances");
+			} else {
+				successCallBack(data);
+			}
+			callback(null, "B");
+		}
+	], function(err, result) {
+		
+	});
+}
+
+function getAllBalanceInOneAddress(address, successCallBack, failCallBack) {
+	var data = "";
+	var count = 0;
+	var errorCount = 0;
+	async.series([
+		function(callback) {
+			count += 2;
+			web3.eth.getBalance(address, function(error, result) {
+				if (error) {
+					console.log(error);
+					errorCount += 1;
+				} else {
+					data += address + ":" + "ETH:" + result / Math.pow(10, _decimal) + "\n";
+					count -= 1;
+					console.log(count);
+					if (count === 0) {
+						callback(null, "A");
+					}
+				}
+				
+			});
+			getBalance(address, _coins[0], function(balance) {
+				data += address + ":" + "WC:" + balance + "\n";
+				count -= 1;
+				console.log(count);
+				if (count === 0) {
+					callback(null, "A");
+				}
+			}, function(error) {
+				errorCount += 1;
+				console.log(error);
+			})
+		},
+		function(callback) {
+			if (errorCount != 0) {
+				failCallBack("error happend in get balances");
+			} else {
+				successCallBack(data);
+			}
+			callback(null, "B");
+		}
+	], function(err, result) {
+
 	});
 }
 
@@ -88,14 +213,50 @@ function sendTransaction(from, to, contractAddress, number, successCallBack, fai
 
 		//使用私钥对原始的交易信息进行签名，得到签名后的交易数据
 		var tx = new Tx(rawTx,{"chain":"ropsten"});
-		tx.sign(Buffer.from(_privateKeys[from].slice(2), "hex"));
+		tx.sign(Buffer.from(_privateKeys[from][1].slice(2), "hex"));
 		var serializedTx = tx.serialize();
 		web3.eth.sendSignedTransaction("0x" + serializedTx.toString("hex"))
 		.on("receipt", function(receipt){
 			console.log(receipt);
-			successCallBack(receipt.transactionHash);
+			successCallBack(receipt.gasUsed, receipt.transactionHash);
 		}).on("error", function(err) {
-			failCallBack("error");
+			failCallBack(err);
+		});
+	});
+}
+
+/** 
+ * 发送Ether币交易
+ */
+function sendETHTransaction(from, to, value, successCallBack, failCallBack) {
+	if (typeof _privateKeys[from] === "undefined") {
+		failCallBack("error no such account, add the account first");
+		return;
+	}
+	web3.eth.getTransactionCount(from).then(function(number) {
+		var price = 2 * Math.pow(10,8);
+		var limit = 10 * 10000;
+		var weiValue = value * Math.pow(10, _decimal);
+
+		var rawTx = {
+			nonce: '0x'+number.toString(16),
+			gasPrice: web3.utils.toHex(price),
+			gasLimit: web3.utils.toHex(limit),
+			to: to,
+			value: web3.utils.toHex(weiValue)
+		}
+	
+		//使用私钥对原始的交易信息进行签名，得到签名后的交易数据
+		var tx = new Tx(rawTx,{"chain":"ropsten"});
+		tx.sign(Buffer.from(_privateKeys[from][1].slice(2), "hex"));
+		var serializedTx = tx.serialize();
+		web3.eth.sendSignedTransaction("0x" + serializedTx.toString("hex"))
+		.on("receipt", function(receipt){
+			console.log(receipt);
+			successCallBack(receipt.gasUsed, receipt.transactionHash);
+		}).on("error", function(err) {
+			console.log(err);
+			failCallBack(err);
 		});
 	});
 }
@@ -106,8 +267,7 @@ function sendTransaction(from, to, contractAddress, number, successCallBack, fai
  * @param {function(address: string, privateKey: string)} successCallBack if sussess, do something with the address and private key
  * @param {function(error: string)} failCallBack if fail, do something with the error message
  */
-
-function create_account(name, successCallBack, failCallBack) {
+function createAccount(name, successCallBack, failCallBack) {
 	var account = web3.eth.accounts.create();
 	if (typeof account !== "undefined") {
 		successCallBack(account.address, account.privateKey);
@@ -122,13 +282,16 @@ function create_account(name, successCallBack, failCallBack) {
  * @param {function(address: string)} successCallBack if success, do something with the address
  * @param {function(error: string)} failCallBack if fail, do something with the error message
  */
-
-function add_account(private_key, successCallBack, failCallBack) {
+function addAccount(private_key, successCallBack, failCallBack) {
 	var data = web3.eth.accounts.privateKeyToAccount(private_key);
 	if (typeof data !== "undefined") {
-		successCallBack(data.address);
+		if (typeof _privateKeys[data.address] === "undefined") {
+			successCallBack(data.address);
+		} else {
+			failCallBack("error the account already exist")
+		}
 	} else {
-		failCallBack("error");
+		failCallBack("error can not add this count");
 	}
 }
 
@@ -149,7 +312,7 @@ function startMonitorFile(filePath, increament, callback) {
 			fs.stat(filePath, function(error, initState) {
 				var pre_size = initState.size;
 				fs.watch(filePath, function (event, filename) {
-					if (event === "change") {
+					//if (event === "change") {
 						fs.stat(filePath, function(error, state) {
 							if (pre_size < state.size) {
 								fs.open(filePath, "r", function(error, fd) {
@@ -165,7 +328,7 @@ function startMonitorFile(filePath, increament, callback) {
 								pre_size = state.size;
 							}
 						});
-					}
+					//}
 				});
 			});
 		} else {
@@ -189,95 +352,232 @@ function startMonitorFile(filePath, increament, callback) {
 	});
 }
 
+/**
+ * monitor the transaction action in a coin
+ * @param {Array(address)} coinAddress the coin type want to monitor
+ * @param {function(from: address, to: address, value: double)} callback 
+ * @param {function()} connectedAction
+ */
+function startMonitorTransaction(callback, connectedAction) {
+	var topics = ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"];
+	// for (var key in _privateKeys) {
+	// 	var filledKey = "0x" + fill64(key.slice(2));
+	// 	topics.push(filledKey);
+	// }
+	var subscription = web3.eth.subscribe("logs", {
+		address: _coins,
+		topics: topics
+	}, function(error, result){
+		if (!error) {
+			console.log(result);
+			var time=sd.format(new Date(), "YYYY-MM-DD hh:mm:ss");
+			callback(web3.utils.toChecksumAddress(toStandardAddress(result.topics[1])),
+					web3.utils.toChecksumAddress(toStandardAddress(result.topics[2])), _coins[0], "WC", 
+					parseInt(result.data, 16) / Math.pow(10, _decimal), result.transactionHash, time);
+		} else {
+			console.log(error);
+		}
+	}).on("connected", function(subscriptionId) {
+		console.log("subscription id is " + subscriptionId);
+		connectedAction();
+	});
+	return subscription;
+}
+
+//not used now
+function addCoin(coinAddress) {
+	web3.eth.getCode(coinAddress, function(error, result) {
+		if(error) {
+			console.log(error);
+			return false;
+		} else {
+			//console.log(result);
+			if (result === "0x") {
+				return false;
+			} else {
+				return true;
+			}
+		}
+	})
+}
+
+var subscription;
+
+function toStandardAddress(address) {
+	return "0x" + address.slice(address.length - 40);
+}
+
+
+console.log("starting...");
+
 async.series(
     [
+		//load private keys
         function (callback) {
-            fs.open(_privateKeysFile, "r", function(error, fd) {
-				fs.stat(_privateKeysFile, function(error, state){
+            fs.open(_privateKeysFile, "r", function(err, fd) {
+				fs.stat(_privateKeysFile, function(err, state){
 					buffer = Buffer.alloc(state.size, 0);
-					fs.read(fd, buffer, 0, state.size, 0, function(error, byteRead, buffer){
+					fs.read(fd, buffer, 0, state.size, 0, function(err, byteRead, buffer){
 						var data = buffer.toString();
 						var dataArray = data.split("\n");
 						for (var i = 0; i < dataArray.length; ++i) {
 							var aData = dataArray[i];
-							var subDataArray = aData.split(":");
-							_privateKeys[subDataArray[0]] = subDataArray[1];
+							if (aData !== "") {
+								var subDataArray = aData.split(":");
+								//subDataArray[1] is address, subDataArray[0] is name, subDataArray[2] is private_key
+								_privateKeys[subDataArray[1]] = [subDataArray[0], subDataArray[2]];
+							}
 						}
 						callback(null, "A");
 					});
 				});
 			});
-        },
+		},
+
+		//others
         function (callback) {
+			//balance
             startMonitorFile(_balanceFile, true, function(newData) {
 				newData = newData.substr(0, newData.length-1);
-				var dataArray = newData.split(":");
-				getBalance(dataArray[0], dataArray[1], function(balance){
-					console.log("balance is " + balance);
-					fs.open(_balanceResultFile, "w", function(error, fd) {
-						fs.write(fd, balance, function(err) {
-							fs.close(fd);
+				if (newData === "ALL") {//get balance in all account
+					getAllBalance(function(allBalance) {//success
+						console.log(allBalance);
+						fs.open(_balanceResultFile, "w", function(err, fd) {
+							fs.write(fd, allBalance, function(err) {
+								fs.close(fd);
+							});
+						})
+					}, function(error) {//fail
+						fs.open(_balanceResultFile, "w", function(err, fd) {
+							fs.write(fd, "error" + error, function(err) {
+								fs.close(fd);
+							});
+						})
+					});
+				} else {
+					var dataArray = newData.split(":");
+					if (dataArray[0] === "ALL") {//get all balance in single account
+						getAllBalanceInOneAddress(dataArray[1], function(allBalance) {
+							console.log(allBalance);
+							fs.open(_balanceResultFile, "w", function(err, fd) {
+								fs.write(fd, allBalance, function(err) {
+									fs.close(fd);
+								});
+							})
+						}, function(error){
+							fs.open(_balanceResultFile, "w", function(err, fd) {
+								fs.write(fd, "error" + error, function(err) {
+									fs.close(fd);
+								});
+							})
 						});
-						
-					})
-				});
+					} else {//get single balance in single account
+						getBalance(dataArray[0], dataArray[1], function(balance){//success
+							console.log("balance is " + balance);
+							fs.open(_balanceResultFile, "w", function(err, fd) {
+								fs.write(fd, balance, function(err) {
+									fs.close(fd);
+								});
+								
+							})
+						}, function(error) {//fail
+							console.log(error);
+							fs.open(_balanceResultFile, "w", function(err, fd) {
+								fs.write(fd, "error " + error.message, function(err) {
+									fs.close(fd);
+								});
+								
+							})
+						});
+					}
+				}
 			});
+			//transaction
 			startMonitorFile(_transactionFile, true, function(newData) {
 				var dataArray = newData.substr(0, newData.length - 1).split(":");
-				sendTransaction(dataArray[0], dataArray[1], dataArray[2], +dataArray[3], 
-				function(transactionHash){
-					fs.open(_transactionResultFile, "w", function(error, fd) {
-						fs.write(fd, transactionHash, function(err) {
-							fs.close(fd);
-						});
-					})
-				}, 
-				function(error){
-					fs.open(_transactionResultFile, "w", function(error, fd) {
-						fs.write(fd, "error", function(err) {
-							fs.close(fd);
-						});
-					})
-				});
+				//dataArray[0] is from, dataArray[1] is to, dataArray[2] is coinAddress, dataArray[4] is count
+				if (dataArray[2] === "ETH") {
+					sendETHTransaction(dataArray[0], dataArray[1], dataArray[3], 
+						function(gasUsed,  transactionHash){
+							fs.open(_transactionResultFile, "w", function(err, fd) {
+								fs.write(fd, gasUsed / Math.pow(10, _decimal) + ":" + transactionHash, function(err) {
+									fs.close(fd);
+								});
+							})
+						}, 
+						function(error){
+							fs.open(_transactionResultFile, "w", function(err, fd) {
+								fs.write(fd, "error " + error, function(err) {
+									fs.close(fd);
+								});
+							})
+						}
+					)
+				} else {
+					sendTransaction(dataArray[0], dataArray[1], dataArray[2], +dataArray[3], 
+						function(gasUsed, transactionHash){
+							fs.open(_transactionResultFile, "w", function(err, fd) {
+								fs.write(fd, gasUsed / Math.pow(10, _decimal) + ":" + transactionHash, function(err) {
+									fs.close(fd);
+								});
+							})
+						}, 
+						function(error){
+							fs.open(_transactionResultFile, "w", function(err, fd) {
+								fs.write(fd, "error" + error, function(err) {
+									fs.close(fd);
+								});
+							})
+						}
+					);
+				}
+				
 			});
+			//account
 			startMonitorFile(_accountFile, true, function(newData) {
 				var dataArray = newData.substr(0, newData.length - 1).split(":");
-				if (dataArray[0] === "create") {
-					create_account(dataArray[1], function(address, private_key) {
-						fs.open(_accountResultFile, "w", function(error, fd) {
-							fs.write(fd, address+":"+private_key, function(err) {
+				if (dataArray[0] === "create") {//create account dataArray[1] is name
+					createAccount(dataArray[1], function(address, privateKey) {
+						console.log("address is " + address + " and privateKey is " + privateKey);
+						fs.open(_accountResultFile, "w", function(err, fd) {
+							fs.write(fd, address + ":" + privateKey, function(err) {
 								fs.close(fd);
 							});
 						})
-						fs.open(_privateKeysFile, "a", function(error, fd) {
-							fs.write(fd, address+":"+private_key + "\n", function(err) {
+						//添加本地缓存中
+						fs.open(_privateKeysFile, "a", function(err, fd) {
+							fs.write(fd, dataArray[1] + ":" + address + ":" + privateKey + "\n", function(err) {
 								fs.close(fd);
 							});
 						})
-						_privateKeys[address] = private_key;
-					}, function (err) {
-						fs.open(_accountResultFile, "w", function(error, fd) {
-							fs.write(fd, "error", function(err) {
+						_privateKeys[address] = [dataArray[1], privateKey];
+						//subscription.arguments[0].topics.push("0x" + fill64(address.slice(2)));
+					}, function (error) {
+						fs.open(_accountResultFile, "w", function(err, fd) {
+							fs.write(fd, "error" + error, function(err) {
 								fs.close(fd);
 							});
 						})
 					})
-				} else if (dataArray[0] === "add") {
-					add_account(dataArray[1], function(address) {
-						fs.open(_accountResultFile, "w", function(error, fd) {
+				} else if (dataArray[0] === "add") {//add account addArray[1] is name and dataArray[2] is private key
+					addAccount(dataArray[2], function(address) {
+						console.log("address is " + address);
+						fs.open(_accountResultFile, "w", function(err, fd) {
 							fs.write(fd, address, function(err) {
 								fs.close(fd);
 							});
 						})
-						fs.open(_privateKeysFile, "a", function(error, fd) {
-							fs.write(fd, address+":"+dataArray[1] + "\n", function(err) {
+						//添加本地缓存
+						fs.open(_privateKeysFile, "a", function(err, fd) {
+							fs.write(fd, dataArray[1] + ":" + address + ":" + dataArray[2] + "\n", function(err) {
 								fs.close(fd);
 							});
 						})
-						_privateKeys[address] = dataArray[1];
-					}, function(err) {
-						fs.open(_accountResultFile, "w", function(error, fd) {
-							fs.write(fd, "error", function(err) {
+						_privateKeys[address] = [dataArray[1], dataArray[2]];
+						//subscription.arguments[0].topics.push("0x" + fill64(address.slice(2)));
+					}, function(error) {
+						fs.open(_accountResultFile, "w", function(err, fd) {
+							fs.write(fd, "error " + error, function(err) {
 								fs.close(fd);
 							});
 						})
@@ -285,8 +585,29 @@ async.series(
 				}
 			});
 			callback(null, "B");
-        }
+		},
+		//monitor transaction
+		function (callback) {
+			console.log("subscribing to transactions...")
+			subscription = startMonitorTransaction(function(from, to, coinAddress, coinName, count, transactionHash, time) {
+				if (typeof _privateKeys[from] === "undefined") {//如果不是内部转账
+					fs.open(_receiveFile, "a", function(error, fd) {
+						fs.write(fd, from + ":" + to + ":" + coinAddress + ":" + coinName + ":" + count + ":" + transactionHash + ":" + time + "\n", function(err) {
+							fs.close(fd);
+						})
+					});
+				}
+			}, function() {
+				callback(null, "C");
+			});
+		},
+		function(callback) {
+			setInterval(function(){
+				web3.eth.getChainId().then(console.log);
+			}, 3000);
+			callback(null, "D");
+		}
     ], function (err, results) {
-        
+        console.log("start done")
     }
 );

@@ -2,10 +2,12 @@
 npm install web3 ethereumjs-tx --save
 npm install async --save
 npm install express --svae
+npm install silly-datetime --save
 mkdir /usr/local/bcfs_server
 cp -r ./node_modules /usr/local/bcfs_server/node_modules
 cp ./tools/ether.js /usr/local/bcfs_server/ether.js
 cp ./tools/generate_file.sh /usr/local/bcfs_server/generate_file.sh
+cp ./tools/config.txt /usr/local/bcfs_server/config.txt
 chmod 755 /usr/local/bcfs_server/generate_file.sh
 cp ./package-lock.json /usr/local/bcfs_server/package-lock.json
 chmod 755 ./tools/generate_file.sh
