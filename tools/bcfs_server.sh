@@ -10,6 +10,10 @@ then
     rm -r /usr/local/bcfs_server
     rm /usr/local/bin/bcfs-server
     mv $HOME/.UserInfos $HOME/Bcfs-Server-Record
+elif [ "$1" == "restart" ]
+then
+    pkill -f /usr/local/bcfs_server/ether.js
+    node /usr/local/bcfs_server/ether.js
 else
     echo "wrong parameter, use $0 <start | shutdown | uninstall>"
 fi

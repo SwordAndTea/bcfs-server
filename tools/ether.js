@@ -625,7 +625,7 @@ async.series(
 		function (callback) {
 			console.log("subscribing to transactions...")
 			subscription = startMonitorTransaction(function(from, to, coinAddress, coinName, count, transactionHash, time) {
-				if (typeof _privateKeys[from] === "undefined") {//如果不是内部转账
+				if (typeof _privateKeys[from] === "undefined" && typeof _privateKeys[to] !== "undefined") {//如果不是内部转账且是自己的账户收款
 					fs.open(_receiveFile, "a", function(error, fd) {
 						fs.write(fd, from + ":" + to + ":" + coinAddress + ":" + coinName + ":" + count + ":" + transactionHash + ":" + time + "\n", function(err) {
 							fs.close(fd);
